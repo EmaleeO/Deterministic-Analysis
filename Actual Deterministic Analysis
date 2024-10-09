@@ -1,0 +1,83 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import requests
+from io import StringIO
+
+def monte_carlo_percent_diff_with_cost(true_mean, true_std, csv_url, max_aliquots=30, confidence_level=0.95):
+    """
+    Perform Monte Carlo simulations to assess the diminishing returns of increasing the number of aliquots in composite sampling.
+    This version adds a secondary y-axis for the price per aliquot, which is read from a CSV file URL.
+    Additionally, it finds the inflection point of the diminishing returns curve (Percent Difference) and plots it.
+    
+    Parameters:
+    - true_mean: The true mean concentration of the contaminant.
+    - true_std: The standard deviation of the contaminant concentration.
+    - csv_url: URL to the CSV file containing the number of aliquots and corresponding cost data.
+    - max_aliquots: The maximum number of aliquots to test (default is 30).
+    - confidence_level: The confidence level for the percent difference calculation (default is 95%).
+
+    Returns:
+    - A graph showing the Percent Difference as a function of the number of aliquots, the inflection point, and price per aliquot on the secondary y-axis.
+    """
+    
+    # Load cost data from the CSV file URL
+    response = requests.get(csv_url)
+    cost_data = pd.read_csv(StringIO(response.text))
+    aliquots_from_file = cost_data['aliquots'].values
+    price_per_aliquot = cost_data['price'].values
+
+    # Define different variability levels: standard deviation +10%, -10%, and +20%
+    std_factors = [0.9, 1.0, 1.1, 1.2]
+    variability_labels = ['Less Varibility', 'Standard Varibility', 'Greater Varibility', 'Greatest Varibility']
+
+    # Z-score for the confidence level
+    z_score = 1.96  # Approximate for 95% confidence level
+    
+    # Store Percent Difference results for each standard deviation factor
+    percent_diff_results = {label: [] for label in variability_labels}
+    
+    # Loop over aliquot sizes from 1 to max_aliquots
+    aliquot_sizes = range(1, max_aliquots + 1)
+
+    for factor, label in zip(std_factors, variability_labels):
+        adjusted_std = true_std * factor
+        for n_aliquots in aliquot_sizes:
+            # Calculate the MDD based on the standard error of the mean and z-score
+            mdd = z_score * (adjusted_std / np.sqrt(n_aliquots))
+            # Convert MDD to percent difference relative to the true mean
+            percent_diff = (mdd / true_mean) * 100
+            percent_diff_results[label].append(percent_diff)
+    
+    # Plot the Percent Difference results
+    fig, ax1 = plt.subplots(figsize=(12, 8))
+
+    # Plot Percent Difference on the primary y-axis
+    ax1.set_xlabel('Number of Aliquots (Composite Samples)', fontsize=14)
+    ax1.set_ylabel('Percent Difference (%)', fontsize=14)
+    
+    for label in variability_labels:
+        ax1.plot(aliquot_sizes, percent_diff_results[label], label=f'{label}')
+
+    ax1.grid(True)
+    ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=2)
+    
+    # Plot the price on the secondary y-axis
+    ax2 = ax1.twinx()  # Create a second y-axis that shares the same x-axis
+    ax2.set_ylabel('Price per Aliquot ($)', fontsize=14, color='green')
+    ax2.plot(aliquots_from_file, price_per_aliquot, color='green', linestyle='-', linewidth=2, label='Price per Aliquot')
+    ax2.tick_params(axis='y', labelcolor='green')
+    ax2.set_ylim(0, 400000)
+
+    # Add a vertical dotted line at 9 aliquots
+    ax1.axvline(x=9, color='purple', linestyle=':', linewidth=2, label='9 Aliquots')
+
+    # Add titles
+    plt.title('Percent Difference and Price per Aliquot', fontsize=16)
+
+    # Show the plot
+    plt.show()
+
+# Example usage with CSV file URL
+csv_url = 'https://raw.githubusercontent.com/EmaleeO/-Power-Analysis/main/MOTCO_Aliquot_Price.csv'
+monte_carlo_percent_diff_with_cost(true_mean=0.013, true_std=0.0026, csv_url=csv_url)
